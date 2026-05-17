@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "aws_profile" {
   description = "Profile AWS CLI configurado para a Conta A"
   type        = string
-  default     = "conta-a"
+  default     = "default"
 }
 
 variable "ami_id" {

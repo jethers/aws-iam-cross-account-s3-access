@@ -22,3 +22,8 @@ output "security_group_id" {
   description = "ID do security group da instância EC2"
   value       = aws_security_group.ec2_sg.id
 }
+
+output "s3_vpc_endpoint_id" {
+  description = "ID do VPC Gateway Endpoint para S3"
+  value       = aws_vpc_endpoint.s3.id
+}

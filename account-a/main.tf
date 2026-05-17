@@ -76,15 +76,6 @@ resource "aws_iam_role_policy_attachment" "attach_s3_policy" {
 }
 
 # -----------------------------------------------------------------
-# Anexa a policy gerenciada da AWS para SSM Session Manager
-# Permite conectar na instância via console sem precisar de SSH/porta 22
-# -----------------------------------------------------------------
-resource "aws_iam_role_policy_attachment" "attach_ssm_policy" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-# -----------------------------------------------------------------
 # Instance Profile para associar a role à EC2
 # -----------------------------------------------------------------
 resource "aws_iam_instance_profile" "ec2_instance_profile" {
@@ -103,7 +94,7 @@ data "aws_ip_ranges" "ec2_instance_connect" {
 
 # -----------------------------------------------------------------
 # Security Group — libera porta 22 apenas para IPs do EC2 Instance Connect
-# e permite saída irrestrita (necessário para SSM e S3)
+# Sem egress irrestrito: S3 roteia via VPC Gateway Endpoint (sem saída pela internet)
 # -----------------------------------------------------------------
 resource "aws_security_group" "ec2_sg" {
   name        = "${var.instance_name}-sg"
@@ -119,10 +110,10 @@ resource "aws_security_group" "ec2_sg" {
   }
 
   egress {
-    description = "Saida irrestrita para internet (necessario para SSM e S3)"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "Saida HTTPS para endpoints AWS (S3 via VPC Gateway Endpoint, demais servicos AWS)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -146,6 +137,40 @@ resource "aws_instance" "ec2" {
 
   tags = {
     Name    = var.instance_name
+    Project = "aws-iam-cross-account-s3-access"
+  }
+}
+
+# -----------------------------------------------------------------
+# Dados da VPC e route table para o Gateway Endpoint
+# Se vpc_id não for fornecido, busca a VPC default
+# -----------------------------------------------------------------
+data "aws_vpc" "selected" {
+  id      = var.vpc_id != "" ? var.vpc_id : null
+  default = var.vpc_id == "" ? true : null
+}
+
+data "aws_route_tables" "selected" {
+  vpc_id = data.aws_vpc.selected.id
+
+  filter {
+    name   = "association.subnet-id"
+    values = [var.subnet_id != "" ? var.subnet_id : aws_instance.ec2.subnet_id]
+  }
+}
+
+# -----------------------------------------------------------------
+# VPC Gateway Endpoint para S3
+# Garante que o tráfego EC2 → S3 não saia pela internet
+# -----------------------------------------------------------------
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = data.aws_vpc.selected.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = data.aws_route_tables.selected.ids
+
+  tags = {
+    Name    = "s3-gateway-endpoint"
     Project = "aws-iam-cross-account-s3-access"
   }
 }
