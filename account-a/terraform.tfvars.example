@@ -1,0 +1,19 @@
+# Conta A — copie este arquivo para terraform.tfvars e preencha os valores
+# ATENÇÃO: terraform.tfvars não deve ser commitado no git
+
+aws_region    = "us-east-1"
+aws_profile   = "your-account-a-profile"
+instance_type = "t2.micro"
+instance_name = "ec2-cross-account"
+role_name     = "ec2-cross-account-s3-role"
+
+# AMI Amazon Linux 2023 — varia por região, consulte o AWS Console ou SSM Parameter Store
+# aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --region us-east-1
+ami_id = "ami-xxxxxxxxxxxxxxxxx"
+
+# ARN do bucket criado na Conta B — preencha após executar o account-b
+bucket_arn = "arn:aws:s3:::your-bucket-name"
+
+# Opcional: deixe em branco para usar a VPC/subnet default da conta
+vpc_id    = ""
+subnet_id = ""

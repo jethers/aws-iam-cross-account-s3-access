@@ -1,0 +1,27 @@
+# Arquivos com valores reais das variáveis (podem conter dados sensíveis)
+terraform.tfvars
+*.tfvars
+!*.tfvars.example
+
+# State files — nunca commitar, usar backend remoto em produção
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+terraform.tfstate
+terraform.tfstate.backup
+
+# Diretório de providers e cache do Terraform
+.terraform/
+.terraform.lock.hcl
+
+# Arquivos de plano
+*.tfplan
+
+# Credenciais e arquivos sensíveis
+*.pem
+*.key
+.env
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

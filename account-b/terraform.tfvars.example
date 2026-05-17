@@ -1,0 +1,14 @@
+# Conta B — copie este arquivo para terraform.tfvars e preencha os valores
+# ATENÇÃO: terraform.tfvars não deve ser commitado no git
+
+aws_region  = "us-east-1"
+aws_profile = "your-account-b-profile"
+bucket_name = "your-unique-bucket-name"
+
+# Primeira execução: deixe create_bucket_policy = false
+# Após criar a role na Conta A, mude para true e re-execute terraform apply
+create_bucket_policy = false
+
+# ARN da IAM Role criada na Conta A — preencha após executar o account-a
+# Formato: arn:aws:iam::ACCOUNT_ID_A:role/nome-da-role
+role_arn = "arn:aws:iam::ACCOUNT_ID_A:role/ec2-cross-account-s3-role"
