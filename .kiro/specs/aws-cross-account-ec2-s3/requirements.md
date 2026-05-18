@@ -76,7 +76,7 @@ This feature provisions Terraform infrastructure across two AWS accounts to allo
 
 1. THE Terraform_Module_B SHALL create an S3_Bucket with a name configurable via the `bucket_name` input variable.
 2. THE Terraform_Module_B SHALL enable public access block (`block_public_acls`, `block_public_policy`, `ignore_public_acls`, `restrict_public_buckets`) on the S3_Bucket.
-3. THE Terraform_Module_B SHALL enable versioning on the S3_Bucket.
+3. THE Terraform_Module_B SHALL provision the S3_Bucket with versioning disabled (`status = "Disabled"`).
 4. THE Terraform_Module_B SHALL return the S3_Bucket ARN and name as outputs for use by Terraform_Module_A.
 5. IF the `bucket_name` variable is not provided, THEN THE Terraform_Module_B SHALL fail at Terraform validation with a descriptive error message.
 
@@ -134,9 +134,9 @@ This feature provisions Terraform infrastructure across two AWS accounts to allo
 #### Acceptance Criteria
 
 1. THE Terraform_Module_A SHALL create a VPC_Gateway_Endpoint of type `Gateway` for the S3 service (`com.amazonaws.<region>.s3`) in the VPC where the EC2_Instance resides.
-2. THE VPC_Gateway_Endpoint SHALL be associated with the route table of the subnet where the EC2_Instance is deployed.
+2. THE VPC_Gateway_Endpoint SHALL be associated with the main route table of the VPC, discovered via the `aws_route_table` data source filtered by `association.main = true`.
 3. WHEN the `vpc_id` variable is not provided, THE Terraform_Module_A SHALL automatically discover the default VPC using the `aws_vpc` data source with `default = true`.
-4. WHEN the `subnet_id` variable is not provided, THE Terraform_Module_A SHALL automatically discover the route table associated with the EC2_Instance's subnet using the `aws_route_tables` data source.
+4. WHEN the `vpc_id` variable is provided, THE Terraform_Module_A SHALL use that VPC's main route table for the VPC_Gateway_Endpoint association.
 5. WHEN the VPC_Gateway_Endpoint is provisioned, AWS SHALL automatically add a route in the associated route table directing S3-bound traffic through the endpoint, bypassing the internet gateway.
 6. THE Terraform_Module_A SHALL return the VPC_Gateway_Endpoint ID as an output named `s3_vpc_endpoint_id`.
 
