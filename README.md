@@ -49,7 +49,7 @@ Access works through the combination of three controls:
 |---|---|
 | `aws_s3_bucket` | S3 bucket with configurable name |
 | `aws_s3_bucket_public_access_block` | Blocks all public access to the bucket |
-| `aws_s3_bucket_versioning` | Enables versioning |
+| `aws_s3_bucket_versioning` | Versioning configured (disabled by default) |
 | `aws_s3_bucket_policy` | Bucket policy that authorizes the Account A IAM Role as principal |
 
 ## Prerequisites
