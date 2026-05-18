@@ -150,12 +150,15 @@ data "aws_vpc" "selected" {
   default = var.vpc_id == "" ? true : null
 }
 
-data "aws_route_tables" "selected" {
+# Busca a route table principal da VPC (main route table)
+# Route tables da VPC default não têm associação explícita com subnets,
+# por isso filtramos pela associação principal da VPC em vez de por subnet
+data "aws_route_table" "main" {
   vpc_id = data.aws_vpc.selected.id
 
   filter {
-    name   = "association.subnet-id"
-    values = [var.subnet_id != "" ? var.subnet_id : aws_instance.ec2.subnet_id]
+    name   = "association.main"
+    values = ["true"]
   }
 }
 
@@ -167,7 +170,7 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_id            = data.aws_vpc.selected.id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = data.aws_route_tables.selected.ids
+  route_table_ids   = [data.aws_route_table.main.id]
 
   tags = {
     Name    = "s3-gateway-endpoint"

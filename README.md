@@ -2,24 +2,32 @@
 
 Terraform scripts to provision cross-account access between two AWS accounts. An EC2 instance in **Account A** directly accesses an S3 bucket in **Account B** using an IAM Role with explicit permissions, without requiring an assume role between accounts.
 
+> **Traffic never leaves the AWS network.** The EC2 instance reaches the S3 bucket in Account B through a **VPC Gateway Endpoint**, bypassing the public internet entirely.
+
 ## Architecture
 
 ```
-Account A (EC2)                        Account B (S3)
-┌─────────────────────────┐            ┌──────────────────────────┐
-│                         │            │                          │
-│  ┌──────────────────┐   │  s3:List   │  ┌────────────────────┐  │
-│  │   EC2 Instance   │───┼────────────┼─▶│    S3 Bucket       │  │
-│  │                  │   │  s3:Get    │  │                    │  │
-│  │  IAM Role        │───┼────────────┼─▶│  Bucket Policy     │  │
-│  │  (Instance       │   │  s3:Put    │  │  (authorizes role  │  │
-│  │   Profile)       │───┼────────────┼─▶│   ARN)             │  │
-│  └──────────────────┘   │  s3:Delete │  └────────────────────┘  │
-│                         │            │                          │
-└─────────────────────────┘            └──────────────────────────┘
+Account A (EC2)                                          Account B (S3)
+┌──────────────────────────────────────────┐            ┌──────────────────────────┐
+│                                          │            │                          │
+│  ┌──────────────────┐                   │            │  ┌────────────────────┐  │
+│  │   EC2 Instance   │                   │            │  │    S3 Bucket       │  │
+│  │  (IAM Role via   │                   │            │  │                    │  │
+│  │ Instance Profile)│                   │            │  │  Bucket Policy     │  │
+│  └────────┬─────────┘                   │            │  │  (authorizes role  │  │
+│           │                             │            │  │   ARN)             │  │
+│           │ s3:List / Get / Put / Delete │            │  └────────────────────┘  │
+│           ▼                             │            │            ▲             │
+│  ┌──────────────────┐                   │            │            │             │
+│  │  VPC Gateway     │───────────────────┼────────────┼────────────┘             │
+│  │  Endpoint (S3)   │  AWS internal     │            │                          │
+│  └──────────────────┘  network only     │            │                          │
+│                                          │            │                          │
+└──────────────────────────────────────────┘            └──────────────────────────┘
 ```
 
-Access works through the combination of two IAM controls:
+Access works through the combination of three controls:
+- **VPC Gateway Endpoint**: routes all S3 traffic through the AWS internal network — no internet gateway involved
 - **Permission Policy** on the IAM Role (Account A): defines the allowed S3 actions
 - **Bucket Policy** on S3 (Account B): authorizes the role ARN as the principal
 
@@ -31,9 +39,10 @@ Access works through the combination of two IAM controls:
 | `aws_iam_role` | IAM Role with trust policy for `ec2.amazonaws.com` |
 | `aws_iam_policy` | Permission policy with `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` |
 | `aws_iam_instance_profile` | Associates the role with the EC2 instance |
-| `aws_iam_role_policy_attachment` | Attaches the S3 policy and `AmazonSSMManagedInstanceCore` policy to the role |
-| `aws_security_group` | Opens port 22 only to EC2 Instance Connect IP ranges for the region |
+| `aws_iam_role_policy_attachment` | Attaches the S3 policy to the role |
+| `aws_security_group` | Ingress: port 22 restricted to EC2 Instance Connect IP ranges. Egress: port 443 only (for OS updates) |
 | `aws_instance` | EC2 instance with public IP and instance profile |
+| `aws_vpc_endpoint` | VPC Gateway Endpoint for S3 — routes S3 traffic internally, bypassing the internet |
 
 ### Account B (`account-b/`)
 | Resource | Description |
@@ -48,7 +57,7 @@ Access works through the combination of two IAM controls:
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.3.0
 - [AWS CLI](https://aws.amazon.com/cli/) configured with two profiles (one per account)
 - Sufficient IAM permissions in each account:
-  - **Account A**: create EC2, IAM Role, IAM Policy, Instance Profile, Security Group
+  - **Account A**: create EC2, IAM Role, IAM Policy, Instance Profile, Security Group, VPC Endpoint
   - **Account B**: create S3 Bucket, Bucket Policy
 
 ## Setup
@@ -104,7 +113,7 @@ terraform apply
 
 Note the `bucket_arn` from the output and fill it in `account-a/terraform.tfvars`.
 
-### Step 2 — Account A (creates the EC2 instance and the role)
+### Step 2 — Account A (creates the EC2 instance, IAM role, and VPC Gateway Endpoint)
 
 ```bash
 cd ../account-a
@@ -125,15 +134,21 @@ terraform apply
 
 ## Connecting to the EC2 Instance
 
-The instance is configured for access via **EC2 Instance Connect** (port 22 open only to AWS IP ranges) and **SSM Session Manager** (no port 22 required).
+Access is configured via **EC2 Instance Connect**. The Security Group allows inbound SSH (port 22) exclusively from the AWS-managed IP ranges of the EC2 Instance Connect service for the configured region, fetched dynamically at apply time via the `aws_ip_ranges` data source.
 
-**Via EC2 Instance Connect:**
+SSM Session Manager is not configured in this project. If needed, it can be enabled by attaching the `AmazonSSMManagedInstanceCore` policy to the IAM Role and adjusting the egress rules accordingly.
+
+**Steps:**
 1. Go to AWS Console → EC2 → Instances
 2. Select the instance → **Connect** → **EC2 Instance Connect**
 
-**Via SSM Session Manager:**
-1. Go to AWS Console → EC2 → Instances
-2. Select the instance → **Connect** → **Session Manager**
+## Network Security
+
+| Traffic | Direction | Rule |
+|---|---|---|
+| SSH (port 22) | Inbound | Restricted to EC2 Instance Connect IP ranges only |
+| HTTPS (port 443) | Outbound | Allowed to `0.0.0.0/0` (required for OS package updates via `yum`/`dnf`) |
+| S3 API calls | Outbound | Routed through VPC Gateway Endpoint — never reaches the internet |
 
 ## Destroying Resources
 
@@ -152,7 +167,7 @@ terraform destroy
 ```
 aws-iam-cross-account-s3-access/
 ├── account-a/
-│   ├── main.tf                  # EC2, IAM Role, Security Group
+│   ├── main.tf                  # EC2, IAM Role, Security Group, VPC Gateway Endpoint
 │   ├── variables.tf
 │   ├── outputs.tf
 │   ├── terraform.tfvars         # not committed
@@ -178,4 +193,4 @@ aws-iam-cross-account-s3-access/
 
 This project was developed with the help of [Kiro](https://kiro.dev), an AI-powered development environment by AWS. The process started with requirements definition in Kiro's Spec session, which produced the specification document available at [`.kiro/specs/aws-cross-account-ec2-s3/requirements.md`](.kiro/specs/aws-cross-account-ec2-s3/requirements.md).
 
-From the requirements, Kiro assisted in generating the Terraform scripts, resolving errors during execution, and making incremental configuration adjustments — such as adding the security group with EC2 Instance Connect IP ranges and separating the bucket policy into an independent step to work around AWS principal validation.
+From the requirements, Kiro assisted in generating the Terraform scripts, resolving errors during execution, and making incremental configuration adjustments — such as adding the VPC Gateway Endpoint for private S3 access, the security group with EC2 Instance Connect IP ranges, and separating the bucket policy into an independent step to work around AWS principal validation.

@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "aws_profile" {
   description = "Profile AWS CLI configurado para a Conta B"
   type        = string
-  default     = "conta-b"
+  default     = "default"
 }
 
 variable "bucket_name" {

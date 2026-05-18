@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This feature provisions Terraform infrastructure across two AWS accounts to allow an EC2 instance in Account A to securely access an S3 bucket in Account B via IAM cross-account access. The solution uses an IAM Role attached to the EC2 instance with explicit read, write, and list permissions on the remote bucket, combined with a bucket policy on Account B's side that authorizes the Account A principal.
+This feature provisions Terraform infrastructure across two AWS accounts to allow an EC2 instance in Account A to securely access an S3 bucket in Account B via IAM cross-account access. The solution uses an IAM Role attached to the EC2 instance with explicit read, write, and list permissions on the remote bucket, combined with a bucket policy on Account B's side that authorizes the Account A principal. All S3 traffic is routed through a VPC Gateway Endpoint, ensuring it never traverses the public internet.
 
 ## Glossary
 
@@ -16,10 +16,10 @@ This feature provisions Terraform infrastructure across two AWS accounts to allo
 - **Bucket_Policy**: Resource policy attached to the S3_Bucket that authorizes the IAM_Role principal to perform the defined actions.
 - **Security_Group**: Security group associated with the EC2_Instance that controls inbound and outbound network traffic.
 - **EC2_Instance_Connect**: AWS service that enables SSH access to the instance via the console, from AWS-managed IP ranges.
-- **SSM_Session_Manager**: AWS service that enables instance access via the console without requiring port 22 to be open.
 - **Terraform_Module_A**: Terraform module/configuration responsible for Account A resources.
 - **Terraform_Module_B**: Terraform module/configuration responsible for Account B resources.
 - **Cross_Account_Access**: IAM access pattern where a principal from one AWS account accesses resources in another AWS account.
+- **VPC_Gateway_Endpoint**: AWS VPC endpoint of type Gateway that routes traffic from the VPC directly to S3 without traversing the public internet.
 
 ---
 
@@ -127,15 +127,30 @@ This feature provisions Terraform infrastructure across two AWS accounts to allo
 
 ---
 
-### Requirement 8: Security Group and EC2 Instance Access
+### Requirement 8: VPC Gateway Endpoint for S3
 
-**User Story:** As an infrastructure engineer, I want the EC2 instance to have a Security Group configured to allow SSH access exclusively via EC2 Instance Connect and access via SSM Session Manager, so that the instance can be accessed securely without exposing port 22 to the internet.
+**User Story:** As an infrastructure engineer, I want to provision a VPC Gateway Endpoint for S3 in Account A's VPC, so that traffic between the EC2 instance and the S3 bucket in Account B never traverses the public internet.
+
+#### Acceptance Criteria
+
+1. THE Terraform_Module_A SHALL create a VPC_Gateway_Endpoint of type `Gateway` for the S3 service (`com.amazonaws.<region>.s3`) in the VPC where the EC2_Instance resides.
+2. THE VPC_Gateway_Endpoint SHALL be associated with the route table of the subnet where the EC2_Instance is deployed.
+3. WHEN the `vpc_id` variable is not provided, THE Terraform_Module_A SHALL automatically discover the default VPC using the `aws_vpc` data source with `default = true`.
+4. WHEN the `subnet_id` variable is not provided, THE Terraform_Module_A SHALL automatically discover the route table associated with the EC2_Instance's subnet using the `aws_route_tables` data source.
+5. WHEN the VPC_Gateway_Endpoint is provisioned, AWS SHALL automatically add a route in the associated route table directing S3-bound traffic through the endpoint, bypassing the internet gateway.
+6. THE Terraform_Module_A SHALL return the VPC_Gateway_Endpoint ID as an output named `s3_vpc_endpoint_id`.
+
+---
+
+### Requirement 9: Security Group and EC2 Instance Access
+
+**User Story:** As an infrastructure engineer, I want the EC2 instance to be accessible via EC2 Instance Connect, so that the instance can be reached securely through the AWS Console without exposing port 22 to arbitrary IPs.
 
 #### Acceptance Criteria
 
 1. THE Terraform_Module_A SHALL create a Security_Group and associate it with the EC2_Instance.
 2. THE Security_Group SHALL contain an ingress rule on port 22 (TCP) restricted to the IP ranges of the EC2_Instance_Connect service for the configured region, retrieved dynamically via the `aws_ip_ranges` data source.
-3. THE Security_Group SHALL contain an unrestricted egress rule (`0.0.0.0/0`) to allow outbound communication with SSM_Session_Manager and S3_Bucket endpoints.
-4. THE IAM_Role SHALL have the `AmazonSSMManagedInstanceCore` managed policy attached to enable SSM_Session_Manager access without requiring port 22.
+3. THE Security_Group SHALL contain an egress rule restricted to HTTPS (port 443, TCP) to `0.0.0.0/0`, allowing outbound communication with AWS service endpoints only (e.g., OS package updates).
+4. THE IAM_Role SHALL NOT have the `AmazonSSMManagedInstanceCore` managed policy attached. SSM Session Manager is out of scope for this project; access is provided via EC2_Instance_Connect.
 5. WHEN the `aws_region` variable is changed, THE Terraform_Module_A SHALL automatically update the Security_Group IP ranges to reflect the EC2_Instance_Connect IPs for the new region.
 6. THE EC2_Instance SHALL have `associate_public_ip_address` enabled to allow access via EC2_Instance_Connect.
